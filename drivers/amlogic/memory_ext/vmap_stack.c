@@ -438,6 +438,8 @@ static noinline void show_fault_stack(unsigned long addr, struct pt_regs *regs)
 		ret = unwind_frame(current, &frame);
 	#elif defined(CONFIG_ARM)
 		ret = unwind_frame(&frame);
+	#else	/* not supported */
+		ret = -1;
 	#endif
 		if (ret < 0)
 			break;
