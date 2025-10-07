@@ -285,4 +285,4 @@ if [ "${BUILDDTB}" = "true" ]; then
 fi
 
 
-exit 1
+exit 0
