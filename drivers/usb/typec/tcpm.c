@@ -490,7 +490,7 @@ static void tcpm_log_force(struct tcpm_port *port, const char *fmt, ...)
 	va_end(args);
 }
 
-static unsigned int tcpm_get_max_fixed_current(struct tcpm_port *port)
+static unsigned int __maybe_unused tcpm_get_max_fixed_current(struct tcpm_port *port)
 {
 	int i;
 	unsigned int max_current_ma = 0;
