@@ -63,6 +63,19 @@ jobs:
           sudo cp /var/cache/apt/archives/*.deb ~/apt-cache/ 2>/dev/null || true
           sudo chown -R $(whoami):$(whoami) ~/apt-cache
 
+      - name: Preparar configuração do kernel
+        run: |
+          export ARCH=arm
+          export CROSS_COMPILE=arm-linux-gnueabihf-
+          
+          # Backup da configuração original
+          cp .github/workflows/.configatv .config
+          cp .config .config.original
+          
+          echo "Configuração inicial copiada"
+
+          make ARCH=arm CROSS_COMPILE=arm-linux-gnueabihf- olddefconfig
+      
       - name: Construir ferramentas kconfig
         run: |
           export ARCH=arm
@@ -79,17 +92,6 @@ jobs:
           else
             echo "Ferramentas kconfig compiladas com sucesso."
           fi
-
-      - name: Preparar configuração do kernel
-        run: |
-          export ARCH=arm
-          export CROSS_COMPILE=arm-linux-gnueabihf-
-          
-          # Backup da configuração original
-          cp .github/workflows/.configatv .config
-          cp .config .config.original
-          
-          echo "Configuração inicial copiada"
 
       - name: Verificar Símbolos Ausentes
         run: |
