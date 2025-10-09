@@ -1,0 +1,178 @@
+name: Verificar Configuração do Kernel
+on:
+  workflow_dispatch:
+
+jobs:
+  check-config:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout do código
+        uses: actions/checkout@v4
+
+      - name: Cache apt packages
+        uses: actions/cache@v4
+        with:
+          path: ~/apt-cache
+          key: ${{ runner.os }}-apt-${{ hashFiles('.github/workflows/*.yml') }}
+          restore-keys: |
+            ${{ runner.os }}-apt-
+      
+      - name: Instalar dependências e Toolchain ARM 32-bit
+        run: |
+          # Criar diretório local para cache
+          mkdir -p ~/apt-cache
+          
+          # Restaurar pacotes do cache local
+          if [ -d ~/apt-cache ] && [ "$(ls -A ~/apt-cache)" ]; then
+            echo "Restaurando pacotes do cache..."
+            sudo cp ~/apt-cache/*.deb /var/cache/apt/archives/ 2>/dev/null || true
+          fi
+          
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            libncurses-dev \
+            bison \
+            flex \
+            libssl-dev \
+            libelf-dev \
+            bc \
+            rsync \
+            git \
+            wget \
+            device-tree-compiler \
+            lzop \
+            u-boot-tools \
+            cpio \
+            kmod
+          
+          # Baixar e instalar Linaro GCC 6.3.1
+          echo "Baixando Linaro GCC 6.3.1..."
+          cd ~
+          wget -q https://releases.linaro.org/components/toolchain/binaries/6.3-2017.02/arm-linux-gnueabihf/gcc-linaro-6.3.1-2017.02-x86_64_arm-linux-gnueabihf.tar.xz
+          
+          echo "Extraindo toolchain..."
+          tar -xf gcc-linaro-6.3.1-2017.02-x86_64_arm-linux-gnueabihf.tar.xz
+          
+          echo "Configurando PATH..."
+          echo "$HOME/gcc-linaro-6.3.1-2017.02-x86_64_arm-linux-gnueabihf/bin" >> $GITHUB_PATH
+          
+          # Salvar pacotes no cache local
+          echo "Salvando pacotes no cache..."
+          sudo cp /var/cache/apt/archives/*.deb ~/apt-cache/ 2>/dev/null || true
+          sudo chown -R $(whoami):$(whoami) ~/apt-cache
+
+      - name: Preparar configuração do kernel
+        run: |
+          export ARCH=arm
+          export CROSS_COMPILE=arm-linux-gnueabihf-
+          
+          # Backup da configuração original
+          cp .github/workflows/.configatv .config
+          cp .config .config.original
+          
+          echo "Configuração inicial copiada"
+
+      - name: Verificar Símbolos Ausentes
+        run: |
+          echo "=== Verificando símbolos que causam erro ==="
+          echo "unwind_frame:"
+          grep -r "unwind_frame" --include="*.c" arch/arm/kernel/ || echo "Nenhuma ocorrência encontrada"
+          
+          echo -e "\nis_valid_mod_type, is_v4lvideo_buf_file, etc:"
+          grep -r "is_valid_mod_type\|is_v4lvideo_buf_file\|dmabuf_get_vframe" --include="*.c" drivers/amlogic/ || echo "Nenhuma ocorrência encontrada"
+          
+          echo -e "\nLocalizando arquivos que exportam estes símbolos:"
+          grep -r "EXPORT_SYMBOL.*unwind_frame" --include="*.c" . || echo "Símbolo unwind_frame não exportado"
+          grep -r "EXPORT_SYMBOL.*is_v4lvideo_buf_file" --include="*.c" . || echo "Símbolo is_v4lvideo_buf_file não exportado"
+
+      - name: Executar silentoldconfig
+        run: |
+          export ARCH=arm
+          export CROSS_COMPILE=arm-linux-gnueabihf-
+          
+          echo "=== Executando scripts/kconfig/conf --silentoldconfig Kconfig ==="
+          # Guarda a saída para análise
+          scripts/kconfig/conf --silentoldconfig Kconfig > silentoldconfig_output.log 2>&1
+          
+          # Mostra a saída
+          cat silentoldconfig_output.log
+          
+          echo -e "\n=== Verificação de .config concluída ==="
+
+      - name: Verificar Diferenças na Configuração
+        run: |
+          echo "=== Comparando configuração original com atualizada ==="
+          # Usando diff colorido para destacar as diferenças
+          diff -u --color=always .config.original .config | tee config_changes.diff || true
+          
+          echo -e "\n=== Verificando configurações Amlogic específicas ==="
+          echo "Configuração ARM_UNWIND:"
+          grep -E "CONFIG_ARM_UNWIND" .config || echo "CONFIG_ARM_UNWIND não encontrado"
+          
+          echo -e "\nConfigurações de vídeo Amlogic:"
+          grep -E 'CONFIG_AMLOGIC_MEDIA_(VDEC|V4L_VIDEO|UVM|COMMON|VIDEO|DRIVERS)' .config || echo "Configurações de mídia Amlogic não encontradas"
+          
+          echo -e "\nConfigurações relacionadas ao VFM Amlogic:"
+          grep -E 'CONFIG_AMLOGIC_VFM' .config || echo "CONFIG_AMLOGIC_VFM não encontrado"
+          
+          # Contagem de configurações modificadas
+          added_configs=$(grep "^+" config_changes.diff | grep "CONFIG_" | wc -l)
+          removed_configs=$(grep "^-" config_changes.diff | grep "CONFIG_" | wc -l)
+          echo -e "\n=== Resumo das mudanças ==="
+          echo "$added_configs configurações adicionadas"
+          echo "$removed_configs configurações removidas"
+          
+          # Verificação específica das configurações mencionadas anteriormente
+          echo -e "\n=== Verificação das configurações problemáticas ==="
+          for config in CONFIG_ARM_UNWIND CONFIG_AMLOGIC_MEDIA_VDEC CONFIG_AMLOGIC_MEDIA_V4L_VIDEO CONFIG_AMLOGIC_MEDIA_UVM; do
+            if grep -q "^$config=y" .config; then
+              echo "✅ $config está habilitado"
+            else
+              echo "❌ $config não está habilitado ou está definido como módulo"
+            fi
+          done
+
+      - name: Verificar Dependências dos Módulos
+        run: |
+          echo "=== Verificando dependências em arquivos Kconfig ==="
+          grep -r "depends on" --include="Kconfig*" drivers/amlogic/media/ | grep -i "video\|vdec\|uvm" || echo "Nenhuma dependência relevante encontrada"
+          
+          echo -e "\n=== Recomendações para resolver os problemas ==="
+          echo "Com base na análise, adicione as seguintes configurações ao seu .config:"
+          echo "CONFIG_ARM_UNWIND=y"
+          echo "CONFIG_AMLOGIC_MEDIA_VDEC=y"
+          echo "CONFIG_AMLOGIC_MEDIA_V4L_VIDEO=y"
+          echo "CONFIG_AMLOGIC_MEDIA_UVM=y"
+
+      - name: Gerar olddefconfig com recomendações
+        run: |
+          export ARCH=arm
+          export CROSS_COMPILE=arm-linux-gnueabihf-
+          
+          echo "=== Gerando novo .config com configurações recomendadas ==="
+          # Adicionando configurações recomendadas
+          cp .config .config.silentoldconfig
+          echo "CONFIG_ARM_UNWIND=y" >> .config
+          echo "CONFIG_AMLOGIC_MEDIA_VDEC=y" >> .config
+          echo "CONFIG_AMLOGIC_MEDIA_V4L_VIDEO=y" >> .config
+          echo "CONFIG_AMLOGIC_MEDIA_UVM=y" >> .config
+          
+          # Executando olddefconfig para ajustar dependências
+          make ARCH=arm CROSS_COMPILE=arm-linux-gnueabihf- olddefconfig
+          
+          echo -e "\n=== Comparando com a versão anterior ==="
+          diff -u --color=always .config.silentoldconfig .config | tee recommended_changes.diff || true
+
+      - name: Upload das Análises de Configuração
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-config-analysis
+          path: |
+            .config
+            .config.original
+            .config.silentoldconfig
+            silentoldconfig_output.log
+            config_changes.diff
+            recommended_changes.diff
