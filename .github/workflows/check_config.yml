@@ -63,6 +63,23 @@ jobs:
           sudo cp /var/cache/apt/archives/*.deb ~/apt-cache/ 2>/dev/null || true
           sudo chown -R $(whoami):$(whoami) ~/apt-cache
 
+      - name: Construir ferramentas kconfig
+        run: |
+          export ARCH=arm
+          export CROSS_COMPILE=arm-linux-gnueabihf-
+          
+          # Compilar os scripts necessários (incluindo kconfig)
+          echo "Compilando ferramentas kconfig..."
+          make scripts
+          
+          # Verificar se as ferramentas foram compiladas com sucesso
+          if [ ! -f "scripts/kconfig/conf" ]; then
+            echo "Erro: Ferramenta scripts/kconfig/conf não foi compilada!"
+            exit 1
+          else
+            echo "Ferramentas kconfig compiladas com sucesso."
+          fi
+
       - name: Preparar configuração do kernel
         run: |
           export ARCH=arm
@@ -94,7 +111,7 @@ jobs:
           
           echo "=== Executando scripts/kconfig/conf --silentoldconfig Kconfig ==="
           # Guarda a saída para análise
-          scripts/kconfig/conf --silentoldconfig Kconfig > silentoldconfig_output.log 2>&1
+          scripts/kconfig/conf --silentoldconfig Kconfig > silentoldconfig_output.log 2>&1 || true
           
           # Mostra a saída
           cat silentoldconfig_output.log
@@ -105,7 +122,7 @@ jobs:
         run: |
           echo "=== Comparando configuração original com atualizada ==="
           # Usando diff colorido para destacar as diferenças
-          diff -u --color=always .config.original .config | tee config_changes.diff || true
+          diff -u .config.original .config | tee config_changes.diff || true
           
           echo -e "\n=== Verificando configurações Amlogic específicas ==="
           echo "Configuração ARM_UNWIND:"
@@ -124,7 +141,7 @@ jobs:
           echo "$added_configs configurações adicionadas"
           echo "$removed_configs configurações removidas"
           
-          # Verificação específica das configurações mencionadas anteriormente
+          # Verificação específica das configurações problemáticas
           echo -e "\n=== Verificação das configurações problemáticas ==="
           for config in CONFIG_ARM_UNWIND CONFIG_AMLOGIC_MEDIA_VDEC CONFIG_AMLOGIC_MEDIA_V4L_VIDEO CONFIG_AMLOGIC_MEDIA_UVM; do
             if grep -q "^$config=y" .config; then
@@ -163,7 +180,7 @@ jobs:
           make ARCH=arm CROSS_COMPILE=arm-linux-gnueabihf- olddefconfig
           
           echo -e "\n=== Comparando com a versão anterior ==="
-          diff -u --color=always .config.silentoldconfig .config | tee recommended_changes.diff || true
+          diff -u .config.silentoldconfig .config | tee recommended_changes.diff || true
 
       - name: Upload das Análises de Configuração
         uses: actions/upload-artifact@v4
