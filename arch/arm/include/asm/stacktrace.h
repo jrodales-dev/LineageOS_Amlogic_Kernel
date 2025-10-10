@@ -23,7 +23,11 @@ void arm_get_current_stackframe(struct pt_regs *regs, struct stackframe *frame)
 		frame->pc = regs->ARM_pc;
 }
 
+#if defined(CONFIG_FRAME_POINTER) || defined(CONFIG_ARM_UNWIND)
 extern int unwind_frame(struct stackframe *frame);
+#else
+#define unwind_frame(f) (-EINVAL)
+#endif
 extern void walk_stackframe(struct stackframe *frame,
 			    int (*fn)(struct stackframe *, void *), void *data);
 
