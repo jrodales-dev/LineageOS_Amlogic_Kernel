@@ -2281,6 +2281,7 @@ int is_v4lvideo_buf_file(struct file *file)
 {
 	return file->f_op == &v4lvideo_file_fops;
 }
+EXPORT_SYMBOL(is_v4lvideo_buf_file);
 
 int v4lvideo_alloc_fd(int *fd)
 {
