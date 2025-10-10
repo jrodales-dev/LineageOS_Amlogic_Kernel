@@ -65,6 +65,7 @@ int notrace unwind_frame(struct stackframe *frame)
 
 	return 0;
 }
+EXPORT_SYMBOL(unwind_frame);
 #endif
 
 void notrace walk_stackframe(struct stackframe *frame,

@@ -477,6 +477,7 @@ int unwind_frame(struct stackframe *frame)
 
 	return URC_OK;
 }
+EXPORT_SYMBOL(unwind_frame);
 
 #ifdef CONFIG_AMLOGIC_VMAP
 static void dump_backtrace_entry_fp(unsigned long where, unsigned long fp,
